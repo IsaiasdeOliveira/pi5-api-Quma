@@ -24,15 +24,15 @@ def adjacent_cells(row: int, col: int) -> list[tuple[int, int]]:
             if dr == 0 and dc == 0:
                 continue
             nr, nc = row + dr, col + dc
-            if 0 <= nr < 5 and 0 <= nc < 5:
+            if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE:
                 cells.append((nr, nc))
     return cells
 
 
 def find_professor(board: list[list[Cell]], name: str) -> Optional[tuple[int, int]]:
     """Encontra a posicao (row, col) de um professor no tabuleiro."""
-    for r in range(5):
-        for c in range(5):
+    for r in range(BOARD_SIZE):
+        for c in range(BOARD_SIZE):
             if board[r][c].professor == name:
                 return (r, c)
     return None
@@ -44,8 +44,8 @@ def choose_setup(board: list[list[Cell]]) -> SetupResponse:
     """
     candidates = [
         (r, c)
-        for r in range(5)
-        for c in range(5)
+        for r in range(BOARD_SIZE)
+        for c in range(BOARD_SIZE)
         if board[r][c].level == 0 and board[r][c].professor is None
     ]
     row, col = random.choice(candidates)

@@ -41,7 +41,7 @@ class AITurnRequest(BaseModel):
   turn_phase: TurnPhase
   your_team: TeamID
   board: List[List[Cell]]
-  professor_to_place: Optional[str] = Field(default=None) # preenchido só no setup
+  professor_to_place: str = Field(default=None) # preenchido só no setup
   
 class SetupResponse(BaseModel):
   """Resposta na fase de posicionamento: onde colocar o professor."""
