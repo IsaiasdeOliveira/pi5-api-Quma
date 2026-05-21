@@ -32,16 +32,36 @@ class Position(BaseModel):
     row: int = Field(ge=0, le=4)
     col: int = Field(ge=0, le=4)
 
+class PlayerStatus(BaseModel):
+    group_name: str
+    ai_player_name: str
+    ai_player_avatar: Optional[str] = None
+    ai_player_description: Optional[str] = None
+    ai_player_move_endpoint: str
+    id: int
+    games_played: int
+    games_won: int
+    games_lost: int
+    average_move_time: Optional[float] = None
+
 class AITurnRequest(BaseModel):
-  """
-  Payload que foi enviado pelo orquestrador de partidas.
-  """
-  game_id: str
-  turn_number: int
-  turn_phase: TurnPhase
-  your_team: TeamID
-  board: List[List[Cell]]
-  professor_to_place: str = Field(default=None) # preenchido só no setup
+    """
+    Payload corrigido para bater exatamente com o formato enviado pelo orquestrador.
+    """
+    id: str = Field(alias="game_id")  # Mapeia o "id" enviado pela API externa para "game_id" interno se preferir, ou apenas use os campos abaixo:
+    status: str
+    turn_number: int = 0              # Mude para opcional ou default se o orquestrador mandar dentro de outro escopo
+    turn_phase: TurnPhase
+    your_team: TeamID
+    board: List[List[Cell]]
+    professor_to_place: Optional[str] = None
+    
+    # Se precisar mapear os jogadores que aparecem na imagem:
+    turing_player: Optional[PlayerStatus] = None
+    lovelace_player: Optional[PlayerStatus] = None
+
+    class Config:
+        populate_by_name = True
   
 class SetupResponse(BaseModel):
   """Resposta na fase de posicionamento: onde colocar o professor."""
