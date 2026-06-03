@@ -19,11 +19,11 @@ TEAM_PROFESSORS = {
 # ---------------------------------------------------------
 # Estes valores devem ser ajustados pelo seu processo de treinamento GA.
 GA_WEIGHTS = {
-    "win_move": 10000.0,
-    "my_height": 22.28540020874664,
-    "opp_height": -27.94907717122248,
-    "center_control": 11.498133950334724,
-    "mobility": 1.225367536592565              # Bônus por ter muitas opções de jogada (CSP)
+    "win_move": 10000,          # Peso absoluto para vitória
+    "height_score": 10,         # Recompensa por estar em andares altos
+    "opponent_height": -15,     # Penalidade se o oponente estiver subindo
+    "center_control": 3,        # Bônus por dominar o centro do grid
+    "mobility": 1               # Bônus por ter muitas opções de jogada (CSP)
 }
 
 def adjacent_cells(row: int, col: int) -> list[tuple[int, int]]:
