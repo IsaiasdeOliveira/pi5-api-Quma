@@ -2,8 +2,8 @@
 import random
 import math
 import copy
-import numpy as np
-import pennylane as qml  # Framework de Quantum Machine Learning
+import pennylane as qml
+from pennylane import numpy as np  # <-- CORREÇÃO 1: Usar o Numpy do próprio PennyLane
 from typing import Optional
 
 from app.schemas import Cell, Position, SetupResponse, PlayerTurnResponse
@@ -23,12 +23,11 @@ N_QUBITS = 4
 # Inicializa o simulador quântico clássico
 dev = qml.device("default.qubit", wires=N_QUBITS)
 
-# Pesos Otimizados offline via Algoritmos Híbridos (ex: VQE, QAOA ou Gradiente Quântico)
-# Formato esperado pelo BasicEntanglerLayers: (num_layers, num_qubits)
+# CORREÇÃO 2: Travar os gradientes (requires_grad=False) pois estamos apenas inferindo/jogando
 QML_TRAINED_WEIGHTS = np.array([
     [0.85, -0.42, 1.15, -0.21],
     [1.52, -0.11, 0.93,  0.64]
-])
+], requires_grad=False)
 
 @qml.qnode(dev)
 def qnn_heuristic_circuit(features, weights):
@@ -36,13 +35,8 @@ def qnn_heuristic_circuit(features, weights):
     Circuito Quântico Parametrizado (PQC).
     Recebe características normalizadas e retorna um valor esperado entre [-1, 1].
     """
-    # 1. State Preparation (Angle Encoding): Mapeia dados clássicos em Qubits
     qml.AngleEmbedding(features, wires=range(N_QUBITS))
-    
-    # 2. Entanglement & Parametrização: As "sinapses" da rede neural quântica
     qml.BasicEntanglerLayers(weights, wires=range(N_QUBITS))
-    
-    # 3. Medição: Mede a observável Pauli-Z no qubit principal
     return qml.expval(qml.PauliZ(0))
 
 
@@ -50,7 +44,6 @@ def qnn_heuristic_circuit(features, weights):
 # MÓDULO 1: FILTRO CSP (Clássico)
 # =========================================================
 def adjacent_cells(row: int, col: int) -> list[tuple[int, int]]:
-    """Retorna todas as casas vizinhas (incluindo diagonais) dentro do grid."""
     cells = []
     for dr in (-1, 0, 1):
         for dc in (-1, 0, 1):
@@ -62,7 +55,6 @@ def adjacent_cells(row: int, col: int) -> list[tuple[int, int]]:
     return cells
 
 def find_professor(board: list[list[Cell]], name: str) -> Optional[tuple[int, int]]:
-    """Encontra a posição (row, col) de um professor no tabuleiro."""
     for r in range(BOARD_SIZE):
         for c in range(BOARD_SIZE):
             if board[r][c].professor == name:
@@ -70,7 +62,6 @@ def find_professor(board: list[list[Cell]], name: str) -> Optional[tuple[int, in
     return None
 
 def choose_setup(board: list[list[Cell]]) -> SetupResponse:
-    """Fase de posicionamento."""
     candidates = [
         (r, c)
         for r in range(BOARD_SIZE)
@@ -82,7 +73,6 @@ def choose_setup(board: list[list[Cell]]) -> SetupResponse:
     return SetupResponse(row=row, col=col)
 
 def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnResponse]:
-    """Gera todos os movimentos legais para a equipe atual (Filtro CSP)."""
     legal_moves = []
     
     for professor in TEAM_PROFESSORS[team_id]:
@@ -121,7 +111,6 @@ def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnRes
     return legal_moves
 
 def apply_move(board: list[list[Cell]], move: PlayerTurnResponse) -> list[list[Cell]]:
-    """Simula um movimento em um novo tabuleiro."""
     new_board = copy.deepcopy(board)
     old_pos = find_professor(new_board, move.professor)
     if old_pos:
@@ -136,7 +125,6 @@ def apply_move(board: list[list[Cell]], move: PlayerTurnResponse) -> list[list[C
 # MÓDULO 3: AVALIAÇÃO VIA QUANTUM MACHINE LEARNING
 # =========================================================
 def evaluate_board_quantum(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
-    """Extrai características clássicas e as envia para o Circuito Quântico."""
     my_height, opp_height, center_ctrl = 0.0, 0.0, 0.0
     
     for r in range(BOARD_SIZE):
@@ -145,42 +133,36 @@ def evaluate_board_quantum(board: list[list[Cell]], team_id: int, opp_id: int) -
             if cell.professor is None:
                 continue
                 
-            # Condição Absoluta Clássica: O QML não precisa prever vitórias garantidas
             if cell.level == 3:
                 return 10000.0 if cell.professor in TEAM_PROFESSORS[team_id] else -10000.0
 
-            # Feature Extraction
             if cell.professor in TEAM_PROFESSORS[team_id]:
                 my_height += cell.level
-                center_ctrl += (4 - (abs(r - 2) + abs(c - 2))) # Distância de Manhattan invertida
+                center_ctrl += (4 - (abs(r - 2) + abs(c - 2))) 
             elif cell.professor in TEAM_PROFESSORS[opp_id]:
                 opp_height += cell.level
                 
-    # Normaliza as características para o AngleEmbedding do QML (valores entre 0 e Pi)
-    # Valores máximos assumidos empiricamente para o board 5x5
     f1 = (my_height / 6.0) * np.pi
     f2 = (opp_height / 6.0) * np.pi
     f3 = (center_ctrl / 8.0) * np.pi
     
-    # Feature de mobilidade (vantagem de movimentos)
     my_moves = len(get_legal_moves(board, team_id))
     opp_moves = len(get_legal_moves(board, opp_id))
     f4 = (max(0, my_moves - opp_moves) / 20.0) * np.pi
 
-    features = np.array([f1, f2, f3, f4])
+    # CORREÇÃO 3: Array sem gradiente para injetar no circuito quântico
+    features = np.array([f1, f2, f3, f4], requires_grad=False)
     
-    # Roda o Circuito Quântico (retorna um escalar entre -1 e 1)
     qml_expectation = qnn_heuristic_circuit(features, QML_TRAINED_WEIGHTS)
     
-    # Converte o valor quântico para um score amplo útil para o Minimax
-    return float(qml_expectation) * 100.0
+    # CORREÇÃO 4: Extração segura do tensor quântico com .item()
+    return float(qml_expectation.item()) * 100.0
 
 # =========================================================
 # MÓDULO 2: MOTOR MINIMAX HÍBRIDO (Busca Clássica + Avaliação Quântica)
 # =========================================================
 def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float, 
             is_maximizing: bool, team_id: int, opp_id: int) -> float:
-    """Busca em profundidade clássica, mas as folhas da árvore são processadas por QML."""
     
     if depth == 0:
         return evaluate_board_quantum(board, team_id, opp_id)
@@ -221,7 +203,6 @@ def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float,
         return min_eval
 
 def choose_turn(board: list[list[Cell]], team_id: int) -> Optional[PlayerTurnResponse]:
-    """Decide a melhor jogada coordenando a infraestrutura Híbrida Quântico-Clássica."""
     opp_id = 2 if team_id == 1 else 1
     best_move = None
     best_score = -math.inf
@@ -234,7 +215,6 @@ def choose_turn(board: list[list[Cell]], team_id: int) -> Optional[PlayerTurnRes
         if move.mentor_at is None:
             return move
 
-    # Profundidade 2: Equilibra o tempo de resposta do PQC com a antecipação
     SEARCH_DEPTH = 2 
     alpha = -math.inf
     beta = math.inf
