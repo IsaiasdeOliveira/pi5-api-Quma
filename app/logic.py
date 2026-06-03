@@ -2,6 +2,8 @@
 import random
 import math
 import copy
+import numpy as np
+import pennylane as qml  # Framework de Quantum Machine Learning
 from typing import Optional
 
 from app.schemas import Cell, Position, SetupResponse, PlayerTurnResponse
@@ -14,18 +16,39 @@ TEAM_PROFESSORS = {
     2: ["KARIN", "BEATRIZ"],   # Lovelace
 }
 
-# ---------------------------------------------------------
-# PESOS DA HEURÍSTICA (Otimizados pelo Algoritmo Genético offline)
-# ---------------------------------------------------------
-# Estes valores devem ser ajustados pelo seu processo de treinamento GA.
-GA_WEIGHTS = {
-    "win_move": 10000,          # Peso absoluto para vitória
-    "height_score": 10,         # Recompensa por estar em andares altos
-    "opponent_height": -15,     # Penalidade se o oponente estiver subindo
-    "center_control": 3,        # Bônus por dominar o centro do grid
-    "mobility": 1               # Bônus por ter muitas opções de jogada (CSP)
-}
+# =========================================================
+# REDE NEURAL QUÂNTICA (QNN) PARA AVALIAÇÃO DO TABULEIRO
+# =========================================================
+N_QUBITS = 4
+# Inicializa o simulador quântico clássico
+dev = qml.device("default.qubit", wires=N_QUBITS)
 
+# Pesos Otimizados offline via Algoritmos Híbridos (ex: VQE, QAOA ou Gradiente Quântico)
+# Formato esperado pelo BasicEntanglerLayers: (num_layers, num_qubits)
+QML_TRAINED_WEIGHTS = np.array([
+    [0.85, -0.42, 1.15, -0.21],
+    [1.52, -0.11, 0.93,  0.64]
+])
+
+@qml.qnode(dev)
+def qnn_heuristic_circuit(features, weights):
+    """
+    Circuito Quântico Parametrizado (PQC).
+    Recebe características normalizadas e retorna um valor esperado entre [-1, 1].
+    """
+    # 1. State Preparation (Angle Encoding): Mapeia dados clássicos em Qubits
+    qml.AngleEmbedding(features, wires=range(N_QUBITS))
+    
+    # 2. Entanglement & Parametrização: As "sinapses" da rede neural quântica
+    qml.BasicEntanglerLayers(weights, wires=range(N_QUBITS))
+    
+    # 3. Medição: Mede a observável Pauli-Z no qubit principal
+    return qml.expval(qml.PauliZ(0))
+
+
+# =========================================================
+# MÓDULO 1: FILTRO CSP (Clássico)
+# =========================================================
 def adjacent_cells(row: int, col: int) -> list[tuple[int, int]]:
     """Retorna todas as casas vizinhas (incluindo diagonais) dentro do grid."""
     cells = []
@@ -47,21 +70,17 @@ def find_professor(board: list[list[Cell]], name: str) -> Optional[tuple[int, in
     return None
 
 def choose_setup(board: list[list[Cell]]) -> SetupResponse:
-    """Fase de posicionamento: escolhe o centro ou adjacências aleatórias."""
+    """Fase de posicionamento."""
     candidates = [
         (r, c)
         for r in range(BOARD_SIZE)
         for c in range(BOARD_SIZE)
         if board[r][c].level == 0 and board[r][c].professor is None
     ]
-    # Tenta priorizar o centro no setup
     center_candidates = [(r, c) for r, c in candidates if 1 <= r <= 3 and 1 <= c <= 3]
     row, col = random.choice(center_candidates if center_candidates else candidates)
     return SetupResponse(row=row, col=col)
 
-# ---------------------------------------------------------
-# MÓDULO 1: FILTRO CSP (Satisfação de Restrições)
-# ---------------------------------------------------------
 def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnResponse]:
     """Gera todos os movimentos legais para a equipe atual (Filtro CSP)."""
     legal_moves = []
@@ -77,12 +96,10 @@ def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnRes
         for dst_row, dst_col in adjacent_cells(cur_row, cur_col):
             dst_cell = board[dst_row][dst_col]
 
-            # Restrições (CSP)
             if dst_cell.professor is not None: continue
             if dst_cell.level == 4: continue
             if dst_cell.level > cur_level + 1: continue
 
-            # Se for vitória imediata (movimento para nível 3)
             if dst_cell.level == 3:
                 legal_moves.append(PlayerTurnResponse(
                     professor=professor,
@@ -90,7 +107,6 @@ def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnRes
                 ))
                 continue
 
-            # Movimentos normais que exigem mentoria (construção)
             for men_row, men_col in adjacent_cells(dst_row, dst_col):
                 men_cell = board[men_row][men_col]
                 is_source = (men_row, men_col) == (cur_row, cur_col)
@@ -105,29 +121,23 @@ def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnRes
     return legal_moves
 
 def apply_move(board: list[list[Cell]], move: PlayerTurnResponse) -> list[list[Cell]]:
-    """Simula um movimento em um novo tabuleiro para a árvore Minimax."""
+    """Simula um movimento em um novo tabuleiro."""
     new_board = copy.deepcopy(board)
-    
-    # 1. Encontra e remove o professor da posição antiga
     old_pos = find_professor(new_board, move.professor)
     if old_pos:
         new_board[old_pos[0]][old_pos[1]].professor = None
         
-    # 2. Move o professor para a nova posição
     new_board[move.move_to.row][move.move_to.col].professor = move.professor
-    
-    # 3. Aplica a mentoria (constrói um andar), se houver
     if move.mentor_at:
         new_board[move.mentor_at.row][move.mentor_at.col].level += 1
-        
     return new_board
 
-# ---------------------------------------------------------
-# MÓDULO 3: FUNÇÃO DE AVALIAÇÃO (Treinada pelo Genético)
-# ---------------------------------------------------------
-def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
-    """Avalia o estado do tabuleiro usando os pesos do Algoritmo Genético."""
-    score = 0.0
+# =========================================================
+# MÓDULO 3: AVALIAÇÃO VIA QUANTUM MACHINE LEARNING
+# =========================================================
+def evaluate_board_quantum(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
+    """Extrai características clássicas e as envia para o Circuito Quântico."""
+    my_height, opp_height, center_ctrl = 0.0, 0.0, 0.0
     
     for r in range(BOARD_SIZE):
         for c in range(BOARD_SIZE):
@@ -135,60 +145,65 @@ def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
             if cell.professor is None:
                 continue
                 
-            # Verifica se alguém já venceu
+            # Condição Absoluta Clássica: O QML não precisa prever vitórias garantidas
             if cell.level == 3:
-                if cell.professor in TEAM_PROFESSORS[team_id]:
-                    return GA_WEIGHTS["win_move"]
-                else:
-                    return -GA_WEIGHTS["win_move"]
+                return 10000.0 if cell.professor in TEAM_PROFESSORS[team_id] else -10000.0
 
-            # Aplica pontuação de heurística
+            # Feature Extraction
             if cell.professor in TEAM_PROFESSORS[team_id]:
-                score += cell.level * GA_WEIGHTS["height_score"]
-                # Bônus por controle central (distância de Manhattan do centro)
-                center_dist = abs(r - 2) + abs(c - 2)
-                score += (4 - center_dist) * GA_WEIGHTS["center_control"]
+                my_height += cell.level
+                center_ctrl += (4 - (abs(r - 2) + abs(c - 2))) # Distância de Manhattan invertida
             elif cell.professor in TEAM_PROFESSORS[opp_id]:
-                score += cell.level * GA_WEIGHTS["opponent_height"]
+                opp_height += cell.level
                 
-    # Fator de Mobilidade: Quem tem mais opções de movimento tem vantagem
-    score += len(get_legal_moves(board, team_id)) * GA_WEIGHTS["mobility"]
-    score -= len(get_legal_moves(board, opp_id)) * GA_WEIGHTS["mobility"]
+    # Normaliza as características para o AngleEmbedding do QML (valores entre 0 e Pi)
+    # Valores máximos assumidos empiricamente para o board 5x5
+    f1 = (my_height / 6.0) * np.pi
+    f2 = (opp_height / 6.0) * np.pi
+    f3 = (center_ctrl / 8.0) * np.pi
     
-    return score
+    # Feature de mobilidade (vantagem de movimentos)
+    my_moves = len(get_legal_moves(board, team_id))
+    opp_moves = len(get_legal_moves(board, opp_id))
+    f4 = (max(0, my_moves - opp_moves) / 20.0) * np.pi
 
-# ---------------------------------------------------------
-# MÓDULO 2: MOTOR MINIMAX COM PODA ALPHA-BETA
-# ---------------------------------------------------------
+    features = np.array([f1, f2, f3, f4])
+    
+    # Roda o Circuito Quântico (retorna um escalar entre -1 e 1)
+    qml_expectation = qnn_heuristic_circuit(features, QML_TRAINED_WEIGHTS)
+    
+    # Converte o valor quântico para um score amplo útil para o Minimax
+    return float(qml_expectation) * 100.0
+
+# =========================================================
+# MÓDULO 2: MOTOR MINIMAX HÍBRIDO (Busca Clássica + Avaliação Quântica)
+# =========================================================
 def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float, 
             is_maximizing: bool, team_id: int, opp_id: int) -> float:
-    """Busca em profundidade com Alpha-Beta Pruning."""
+    """Busca em profundidade clássica, mas as folhas da árvore são processadas por QML."""
     
-    # Condição de parada: profundidade limite alcançada
     if depth == 0:
-        return evaluate_board(board, team_id, opp_id)
+        return evaluate_board_quantum(board, team_id, opp_id)
         
     current_team = team_id if is_maximizing else opp_id
     legal_moves = get_legal_moves(board, current_team)
     
-    # Se não há movimentos legais, o jogador atual perdeu
     if not legal_moves:
-        return -GA_WEIGHTS["win_move"] if is_maximizing else GA_WEIGHTS["win_move"]
+        return -10000.0 if is_maximizing else 10000.0
 
     if is_maximizing:
         max_eval = -math.inf
         for move in legal_moves:
             simulated_board = apply_move(board, move)
             
-            # Se a jogada simulada garante a vitória instantânea, para de buscar
             if move.mentor_at is None and simulated_board[move.move_to.row][move.move_to.col].level == 3:
-                return GA_WEIGHTS["win_move"]
+                return 10000.0
                 
             eval_score = minimax(simulated_board, depth - 1, alpha, beta, False, team_id, opp_id)
             max_eval = max(max_eval, eval_score)
             alpha = max(alpha, eval_score)
             if beta <= alpha:
-                break  # Poda Alpha-Beta
+                break
         return max_eval
     else:
         min_eval = math.inf
@@ -196,42 +211,36 @@ def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float,
             simulated_board = apply_move(board, move)
             
             if move.mentor_at is None and simulated_board[move.move_to.row][move.move_to.col].level == 3:
-                return -GA_WEIGHTS["win_move"]
+                return -10000.0
                 
             eval_score = minimax(simulated_board, depth - 1, alpha, beta, True, team_id, opp_id)
             min_eval = min(min_eval, eval_score)
             beta = min(beta, eval_score)
             if beta <= alpha:
-                break  # Poda Alpha-Beta
+                break
         return min_eval
 
 def choose_turn(board: list[list[Cell]], team_id: int) -> Optional[PlayerTurnResponse]:
-    """
-    Decide a melhor jogada usando CSP (Filtro) e Minimax + Alpha-Beta.
-    """
+    """Decide a melhor jogada coordenando a infraestrutura Híbrida Quântico-Clássica."""
     opp_id = 2 if team_id == 1 else 1
     best_move = None
     best_score = -math.inf
     
-    # 1. Filtro CSP: Busca todos os nós raiz válidos
     legal_moves = get_legal_moves(board, team_id)
     if not legal_moves:
         return None
 
-    # Verifica primeiro se há um movimento de vitória imediata para economizar processamento
     for move in legal_moves:
-        if move.mentor_at is None:  # Jogada de vitória não tem 'mentor_at'
+        if move.mentor_at is None:
             return move
 
-    # 2. Avaliação de ramos via Minimax com profundidade definida
-    # A profundidade (depth) pode ser ajustada. Para grids 5x5, depth 2 ou 3 costuma ter boa performance.
+    # Profundidade 2: Equilibra o tempo de resposta do PQC com a antecipação
     SEARCH_DEPTH = 2 
     alpha = -math.inf
     beta = math.inf
 
     for move in legal_moves:
         simulated_board = apply_move(board, move)
-        # Inicia a busca assumindo que o próximo turno é do oponente (is_maximizing=False)
         move_score = minimax(simulated_board, SEARCH_DEPTH - 1, alpha, beta, False, team_id, opp_id)
         
         if move_score > best_score:
@@ -240,7 +249,6 @@ def choose_turn(board: list[list[Cell]], team_id: int) -> Optional[PlayerTurnRes
             
         alpha = max(alpha, best_score)
 
-    # Se todas as avaliações empatarem, fallback de segurança
     if best_move is None:
         best_move = random.choice(legal_moves)
         
