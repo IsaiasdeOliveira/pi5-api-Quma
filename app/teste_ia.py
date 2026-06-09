@@ -6,7 +6,7 @@ from app.logic import choose_turn, apply_move, get_legal_moves
 from app.schemas import Cell, PlayerTurnResponse
 
 # =======================================================
-# 1. A ARENA DE SIMULAÇÃO (Minimax vs Minimax)
+# 1. A ARENA DE SIMULAÇÃO (Minimax vs Oponente)
 # =======================================================
 def gerar_tabuleiro_inicial():
     return [[Cell(level=0, professor=None) for _ in range(5)] for _ in range(5)]
@@ -50,13 +50,26 @@ def simular_partida():
         if board[pos.row][pos.col].level == 3 and board[pos.row][pos.col].professor in ["CLARO", "REY"]:
             return True, turnos
             
-        # 🧠 TURNO DO RIVAL INTELIGENTE (Time 2 - Minimax Antigo)
+        # =======================================================
+        # 🧠 TURNO DO OPONENTE (TIME 2)
+        # =======================================================
+        
+        # --- OPÇÃO A: RIVAL INTELIGENTE (MINIMAX ANTIGO) ---
+        # (Monotona o processamento, use no Colab!)
         logic.New_WEIGHTS = pesos_rivais_base 
         jogada_rival = choose_turn(board, team_id=2)
         if not jogada_rival: 
             logic.New_WEIGHTS = pesos_treinados
             return True, turnos 
             
+        # --- OPÇÃO B: BOT RANDÔMICO (TESTE RÁPIDO) ---
+        # (Se o Minimax demorar demais, comente a Opção A e descomente as linhas abaixo!)
+        # jogadas_rivais = get_legal_moves(board, team_id=2)
+        # if not jogadas_rivais:
+        #     logic.New_WEIGHTS = pesos_treinados
+        #     return True, turnos
+        # jogada_rival = random.choice(jogadas_rivais)
+        
         board = apply_move(board, jogada_rival)
         turnos += 1
         
@@ -65,14 +78,31 @@ def simular_partida():
             logic.New_WEIGHTS = pesos_treinados
             return False, turnos
             
+    # =======================================================
+    # ⚖️ REGRA DE DESEMPATE (Caso o jogo bata 150 turnos)
+    # =======================================================
     logic.New_WEIGHTS = pesos_treinados
+    
+    # Se os bots inteligentes se bloquearem infinitamente, ganha quem construiu mais alto!
+    niveis_time1 = 0
+    niveis_time2 = 0
+    for r in range(5):
+        for c in range(5):
+            cell = board[r][c]
+            if cell.professor in ["CLARO", "REY"]:
+                niveis_time1 += cell.level
+            elif cell.professor in ["KARIN", "BEATRIZ"]:
+                niveis_time2 += cell.level
+                
+    if niveis_time1 >= niveis_time2:
+        return True, turnos  # QumAI ganha por dominância de território
+        
     return False, turnos
 
 
 # =======================================================
 # 2. O MOTOR DE MACHINE LEARNING (Hill Climbing)
 # =======================================================
-# IMPORTANTE: Mude para 500 quando rodar no Colab!
 N_PARTIDAS_POR_TESTE = 100  
 GERACOES = 10  
 
@@ -112,6 +142,7 @@ if __name__ == "__main__":
         
         taxa_mutante, media_mutante = avaliar_geracao(pesos_mutantes)
         
+        # Filtro de Seleção Natural
         if taxa_mutante >= (melhor_taxa - 1.0) and media_mutante < melhor_media:
             print(f"   ✅ EVOLUÇÃO! Média caiu de {melhor_media:.2f} para {media_mutante:.2f} turnos.")
             melhor_taxa = taxa_mutante
