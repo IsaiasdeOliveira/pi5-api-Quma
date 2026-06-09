@@ -1,9 +1,9 @@
 {
     "win_move": 10000.0,
-    "my_height": 51.06,
-    "opp_height": -19.83,
-    "center_control": 20.53,
-    "mobility": 1.89,
-    "block_enemy": 35.0,
-    "trap_professor": 50.0
+    "my_height": 41.27,
+    "opp_height": -19.93,
+    "center_control": 26.51,
+    "mobility": 1.42,
+    "block_enemy": 32.89,
+    "trap_professor": 49.19
 }
