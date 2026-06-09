@@ -1,6 +1,8 @@
 # app/logic.py
 import random
 import math
+import json
+import os
 from typing import Optional
 
 from app.schemas import Cell, Position, SetupResponse, PlayerTurnResponse
@@ -13,15 +15,27 @@ TEAM_PROFESSORS = {
     2: ["KARIN", "BEATRIZ"],   # Lovelace
 }
 
-# Pesos da Função de Avaliação
-# Pesos otimizados para agressividade e dominância geométrica rápida
+# Pesos padrão da Função de Avaliação (Plano B caso o arquivo treinado não exista)
 WEIGHTS = {
     "win_move": 10000.0,
-    "my_height": 40.0,         # Foco obsessivo em subir de nível (Ataque)
-    "opp_height": -18.0,       # Reduzido: ignora movimentações periféricas do rival
-    "center_control": 15.0,    # Aumentado: o centro garante maior mobilidade e bloqueio natural
-    "mobility": 2.0            # Maior peso para garantir mais opções de escape
+    "my_height": 40.0,         
+    "opp_height": -18.0,       
+    "center_control": 15.0,    
+    "mobility": 2.0,
+    "block_enemy": 35.0,       # 🔥 NOVO: Nota para bloquear ou atrapalhar o rival
+    "trap_professor": 50.0     # 🔥 NOVO: Nota para encurralar um professor inimigo
 }
+
+def carregar_pesos():
+    """Procura o cérebro treinado. Se não achar, usa o padrão."""
+    caminho = "melhores_pesos.json" 
+    if os.path.exists(caminho):
+        with open(caminho, "r") as f:
+            return json.load(f)
+    return WEIGHTS.copy()
+
+# A variável New_WEIGHTS agora é dinâmica e carrega a inteligência salva!
+New_WEIGHTS = carregar_pesos()
 
 # =========================================================
 # MÓDULO 1: FILTRO CSP (Satisfação de Restrições)
@@ -54,7 +68,6 @@ def choose_setup(board: list[list[Cell]]) -> SetupResponse:
         for c in range(BOARD_SIZE)
         if board[r][c].level == 0 and board[r][c].professor is None
     ]
-    # Tenta priorizar o centro no setup
     center_candidates = [(r, c) for r, c in candidates if 1 <= r <= 3 and 1 <= c <= 3]
     row, col = random.choice(center_candidates if center_candidates else candidates)
     return SetupResponse(row=row, col=col)
@@ -74,12 +87,10 @@ def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnRes
         for dst_row, dst_col in adjacent_cells(cur_row, cur_col):
             dst_cell = board[dst_row][dst_col]
 
-            # Restrições (CSP)
             if dst_cell.professor is not None: continue
             if dst_cell.level == 4: continue
             if dst_cell.level > cur_level + 1: continue
 
-            # Se for vitória imediata (movimento para nível 3)
             if dst_cell.level == 3:
                 legal_moves.append(PlayerTurnResponse(
                     professor=professor,
@@ -87,7 +98,6 @@ def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnRes
                 ))
                 continue
 
-            # Movimentos normais que exigem mentoria (construção)
             for men_row, men_col in adjacent_cells(dst_row, dst_col):
                 men_cell = board[men_row][men_col]
                 is_source = (men_row, men_col) == (cur_row, cur_col)
@@ -102,7 +112,7 @@ def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnRes
     return legal_moves
 
 def count_legal_moves(board: list[list[Cell]], team_id: int) -> int:
-    """Contador de mobilidade otimizado para não instanciar objetos Pydantic."""
+    """Contador de mobilidade otimizado."""
     count = 0
     for professor in TEAM_PROFESSORS[team_id]:
         pos = find_professor(board, professor)
@@ -129,24 +139,20 @@ def count_legal_moves(board: list[list[Cell]], team_id: int) -> int:
     return count
 
 def apply_move(board: list[list[Cell]], move: PlayerTurnResponse) -> list[list[Cell]]:
-    """Simula um movimento via reatribuição explícita (Evita overhead de deepcopy)."""
-    # Cópia rasa: cria uma nova matriz de referências, permitindo mutação isolada
+    """Simula um movimento via reatribuição explícita."""
     new_board = [row[:] for row in board] 
 
-    # 1. Encontra e remove o professor da posição antiga
     old_pos = find_professor(board, move.professor)
     if old_pos:
         o_r, o_c = old_pos
         new_board[o_r][o_c] = Cell(level=board[o_r][o_c].level, professor=None)
 
-    # 2. Move o professor para a nova posição
     n_r, n_c = move.move_to.row, move.move_to.col
     new_board[n_r][n_c] = Cell(level=board[n_r][n_c].level, professor=move.professor)
 
-    # 3. Aplica a mentoria (constrói um andar), se houver
     if move.mentor_at:
         m_r, m_c = move.mentor_at.row, move.mentor_at.col
-        curr_prof = new_board[m_r][m_c].professor # Usa o estado do new_board caso a célula seja a mesma de destino
+        curr_prof = new_board[m_r][m_c].professor
         new_board[m_r][m_c] = Cell(level=board[m_r][m_c].level + 1, professor=curr_prof)
 
     return new_board
@@ -164,35 +170,38 @@ def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
             if cell.professor is None:
                 continue
 
-            # Verifica se alguém já venceu
             if cell.level == 3:
-                return WEIGHTS["win_move"] if cell.professor in TEAM_PROFESSORS[team_id] else -WEIGHTS["win_move"]
+                return New_WEIGHTS["win_move"] if cell.professor in TEAM_PROFESSORS[team_id] else -New_WEIGHTS["win_move"]
 
             if cell.professor in TEAM_PROFESSORS[team_id]:
-                # 1. Pontuação Base (Onde estou pisando)
-                score += cell.level * WEIGHTS["my_height"]
+                score += cell.level * New_WEIGHTS["my_height"]
                 center_dist = abs(r - 2) + abs(c - 2)
-                score += (4 - center_dist) * WEIGHTS["center_control"]
+                score += (4 - center_dist) * New_WEIGHTS["center_control"]
                 
-                # 2. Visão de Futuro: Recompensa pesadamente blocos vizinhos acessíveis
                 for nr, nc in adjacent_cells(r, c):
                     adj = board[nr][nc]
-                    # Se for uma casa vazia que podemos subir no próximo turno
                     if adj.professor is None and adj.level <= cell.level + 1 and adj.level < 4:
-                        # O peso 15.0 aqui funciona como "incentivo de construção"
                         score += adj.level * 15.0
 
             elif cell.professor in TEAM_PROFESSORS[opp_id]:
-                score += cell.level * WEIGHTS["opp_height"]
+                score += cell.level * New_WEIGHTS["opp_height"]
                 
-                # Visão de Futuro: Penaliza blocos vizinhos acessíveis ao inimigo
                 for nr, nc in adjacent_cells(r, c):
                     adj = board[nr][nc]
                     if adj.professor is None and adj.level <= cell.level + 1 and adj.level < 4:
                         score -= adj.level * 15.0
+                        
+                        # 🧠 ESTRATÉGIA ANTI-INIMIGO (Bloqueio com nível 4)
+                        if adj.level == 4:
+                            score += New_WEIGHTS["block_enemy"]
 
-    # Fator de Mobilidade
-    score += (count_legal_moves(board, team_id) - count_legal_moves(board, opp_id)) * WEIGHTS["mobility"]
+    # 🧠 ESTRATÉGIA DE ENCURRALAMENTO (Mobilidade Relativa)
+    movimentos_meus = count_legal_moves(board, team_id)
+    movimentos_inimigos = count_legal_moves(board, opp_id)
+    
+    score += movimentos_meus * New_WEIGHTS["mobility"]
+    if movimentos_inimigos == 0:
+        score += New_WEIGHTS["trap_professor"]  
     
     return score
 
@@ -200,7 +209,7 @@ def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
 # MÓDULO 3: MOTOR MINIMAX (Com Pressão de Tempo)
 # =========================================================
 def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float, is_maximizing: bool, team_id: int, opp_id: int) -> float:
-    """Busca em profundidade com Alpha-Beta Pruning e penalidade de tempo."""
+    """Busca em profundidade com Alpha-Beta Pruning."""
     if depth == 0:
         return evaluate_board(board, team_id, opp_id)
 
@@ -208,16 +217,14 @@ def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float, is_m
     legal_moves = get_legal_moves(board, current_team)
     
     if not legal_moves:
-        return -WEIGHTS["win_move"] if is_maximizing else WEIGHTS["win_move"]
+        return -New_WEIGHTS["win_move"] if is_maximizing else New_WEIGHTS["win_move"]
 
     if is_maximizing:
         max_eval = -math.inf
         for move in legal_moves:
             simulated_board = apply_move(board, move)
-            
-            # Recompensa vitórias rápidas (+ depth)
             if move.mentor_at is None and simulated_board[move.move_to.row][move.move_to.col].level == 3:
-                return WEIGHTS["win_move"] + (depth * 1000)
+                return New_WEIGHTS["win_move"] + (depth * 1000)
                 
             eval_score = minimax(simulated_board, depth - 1, alpha, beta, False, team_id, opp_id)
             max_eval = max(max_eval, eval_score)
@@ -229,10 +236,8 @@ def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float, is_m
         min_eval = math.inf
         for move in legal_moves:
             simulated_board = apply_move(board, move)
-            
-            # Penaliza derrotas rápidas (- depth)
             if move.mentor_at is None and simulated_board[move.move_to.row][move.move_to.col].level == 3:
-                return -WEIGHTS["win_move"] - (depth * 1000)
+                return -New_WEIGHTS["win_move"] - (depth * 1000)
                 
             eval_score = minimax(simulated_board, depth - 1, alpha, beta, True, team_id, opp_id)
             min_eval = min(min_eval, eval_score)
@@ -242,17 +247,18 @@ def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float, is_m
         return min_eval
 
 def choose_turn(board: list[list[Cell]], team_id: int) -> Optional[PlayerTurnResponse]:
-    """Decide a melhor jogada usando CSP (Filtro) e Minimax + Alpha-Beta."""
+    """Decide a melhor jogada usando CSP e Minimax + Alpha-Beta."""
     opp_id = 2 if team_id == 1 else 1
-    
     legal_moves = get_legal_moves(board, team_id)
     if not legal_moves:
         return None
 
-    # Vitória instantânea ignorando o Minimax
     for move in legal_moves:
         if move.mentor_at is None:
             return move
+
+    # 🌟 MODIFICAÇÃO DE VELOCIDADE: Move Ordering
+    legal_moves.sort(key=lambda m: board[m.move_to.row][m.move_to.col].level, reverse=True)
 
     SEARCH_DEPTH = 2 
     best_move = None
@@ -263,11 +269,9 @@ def choose_turn(board: list[list[Cell]], team_id: int) -> Optional[PlayerTurnRes
     for move in legal_moves:
         simulated_board = apply_move(board, move)
         move_score = minimax(simulated_board, SEARCH_DEPTH - 1, alpha, beta, False, team_id, opp_id)
-        
         if move_score > best_score:
             best_score = move_score
             best_move = move
-            
         alpha = max(alpha, best_score)
 
     return best_move if best_move else random.choice(legal_moves)
