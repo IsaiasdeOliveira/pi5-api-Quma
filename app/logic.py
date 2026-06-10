@@ -17,12 +17,10 @@ TEAM_PROFESSORS = {
 # Pesos padrão da Função de Avaliação (Plano B caso o arquivo treinado não exista)
 WEIGHTS = {
     "win_move": 10000.0,
-    "my_height": 40.0,         
-    "opp_height": -18.0,       
+    "my_height": 35.0,         
+    "opp_height": -35.0,       # Respeito absoluto ao avanço inimigo
     "center_control": 15.0,    
-    "mobility": 2.0,
-    "block_enemy": 35.0,       # para bloquear ou atrapalhar o rival
-    "trap_professor": 50.0     # para encurralar um professor inimigo
+    "mobility": 2.0            
 }
 
 def carregar_pesos():
@@ -157,10 +155,10 @@ def apply_move(board: list[list[Cell]], move: PlayerTurnResponse) -> list[list[C
     return new_board
 
 # =========================================================
-# MÓDULO 2: AVALIAÇÃO DE ESTADO (Com Visão de Futuro)
+# MÓDULO 2: AVALIAÇÃO DE ESTADO (Tática Anti-IAs Inteligentes)
 # =========================================================
 def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
-    """Avalia o estado do tabuleiro usando os pesos definidos."""
+    """Avalia o estado com regras críticas de bloqueio (Estilo Santorini)."""
     score = 0.0
     
     for r in range(BOARD_SIZE):
@@ -169,38 +167,46 @@ def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
             if cell.professor is None:
                 continue
 
+            # Condição de Vitória Imparável
             if cell.level == 3:
-                return New_WEIGHTS["win_move"] if cell.professor in TEAM_PROFESSORS[team_id] else -New_WEIGHTS["win_move"]
+                return WEIGHTS["win_move"] if cell.professor in TEAM_PROFESSORS[team_id] else -WEIGHTS["win_move"]
 
+            # --- AVALIAÇÃO DA NOSSA IA ---
             if cell.professor in TEAM_PROFESSORS[team_id]:
-                score += cell.level * New_WEIGHTS["my_height"]
+                score += cell.level * WEIGHTS["my_height"]
                 center_dist = abs(r - 2) + abs(c - 2)
-                score += (4 - center_dist) * New_WEIGHTS["center_control"]
+                score += (4 - center_dist) * WEIGHTS["center_control"]
+                
+                # BÔNUS DE AMEAÇA: Se pisamos no Nível 2, a nossa prioridade é esmagar.
+                if cell.level == 2:
+                    score += 300.0
                 
                 for nr, nc in adjacent_cells(r, c):
                     adj = board[nr][nc]
                     if adj.professor is None and adj.level <= cell.level + 1 and adj.level < 4:
                         score += adj.level * 15.0
 
+            # --- AVALIAÇÃO DO INIMIGO (Onde estávamos perdendo) ---
             elif cell.professor in TEAM_PROFESSORS[opp_id]:
-                score += cell.level * New_WEIGHTS["opp_height"]
+                score += cell.level * WEIGHTS["opp_height"]
+                
+                # CORTA-FOGO 1: Inimigo no nível 2 é risco de morte. Abandone a subida e vá atrapalhar.
+                if cell.level == 2:
+                    score -= 400.0 
                 
                 for nr, nc in adjacent_cells(r, c):
                     adj = board[nr][nc]
-                    if adj.professor is None and adj.level <= cell.level + 1 and adj.level < 4:
-                        score -= adj.level * 15.0
+                    
+                    # CORTA-FOGO 2 (A CAUSA DAS DERROTAS): 
+                    # Se o inimigo no nível 2 estiver ao lado de um nível 3 vazio, é derrota matemática no turno dele.
+                    if adj.professor is None and adj.level == 3 and cell.level >= 2:
+                        score -= 8000.0 # Aplica pânico extremo na árvore de decisão do Minimax
                         
-                        # ESTRATÉGIA ANTI-INIMIGO (Bloqueio com nível 4)
-                        if adj.level == 4:
-                            score += New_WEIGHTS["block_enemy"]
+                    if adj.professor is None and adj.level <= cell.level + 1 and adj.level < 4:
+                        score -= adj.level * 20.0 # Defesa ligeiramente mais pesada que o ataque (+15)
 
-    # ESTRATÉGIA DE ENCURRALAMENTO (Mobilidade Relativa)
-    movimentos_meus = count_legal_moves(board, team_id)
-    movimentos_inimigos = count_legal_moves(board, opp_id)
-    
-    score += movimentos_meus * New_WEIGHTS["mobility"]
-    if movimentos_inimigos == 0:
-        score += New_WEIGHTS["trap_professor"]  
+    # Fator de Mobilidade
+    score += (count_legal_moves(board, team_id) - count_legal_moves(board, opp_id)) * WEIGHTS["mobility"]
     
     return score
 
