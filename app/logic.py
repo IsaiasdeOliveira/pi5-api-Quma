@@ -155,59 +155,61 @@ def apply_move(board: list[list[Cell]], move: PlayerTurnResponse) -> list[list[C
     return new_board
 
 # =========================================================
-# MÓDULO 2: AVALIAÇÃO DE ESTADO (Tática Anti-IAs Inteligentes)
+# MÓDULO 2: AVALIAÇÃO DE ESTADO (Tática de Marcação Fechada)
 # =========================================================
 def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
-    """Avalia o estado com regras críticas de bloqueio (Estilo Santorini)."""
     score = 0.0
-    
+    my_profs = []
+    opp_profs = []
+
+    # 1. Coleta posições e avalia a altura base das peças
     for r in range(BOARD_SIZE):
         for c in range(BOARD_SIZE):
             cell = board[r][c]
             if cell.professor is None:
                 continue
 
-            # Condição de Vitória Imparável
+            # Condição de Vitória Matemática
             if cell.level == 3:
-                return WEIGHTS["win_move"] if cell.professor in TEAM_PROFESSORS[team_id] else -WEIGHTS["win_move"]
+                return 10000.0 if cell.professor in TEAM_PROFESSORS[team_id] else -10000.0
 
-            # --- AVALIAÇÃO DA NOSSA IA ---
             if cell.professor in TEAM_PROFESSORS[team_id]:
-                score += cell.level * WEIGHTS["my_height"]
+                my_profs.append((r, c, cell.level))
+                # Recompensa exponencial por subir andares
+                if cell.level == 1: score += 40.0
+                elif cell.level == 2: score += 150.0
+                
+                # Controle de centro suave para início de jogo
                 center_dist = abs(r - 2) + abs(c - 2)
-                score += (4 - center_dist) * WEIGHTS["center_control"]
-                
-                # BÔNUS DE AMEAÇA: Se pisamos no Nível 2, a nossa prioridade é esmagar.
-                if cell.level == 2:
-                    score += 300.0
-                
-                for nr, nc in adjacent_cells(r, c):
-                    adj = board[nr][nc]
-                    if adj.professor is None and adj.level <= cell.level + 1 and adj.level < 4:
-                        score += adj.level * 15.0
+                score += (4 - center_dist) * 5.0
 
-            # --- AVALIAÇÃO DO INIMIGO (Onde estávamos perdendo) ---
             elif cell.professor in TEAM_PROFESSORS[opp_id]:
-                score += cell.level * WEIGHTS["opp_height"]
-                
-                # CORTA-FOGO 1: Inimigo no nível 2 é risco de morte. Abandone a subida e vá atrapalhar.
-                if cell.level == 2:
-                    score -= 400.0 
-                
-                for nr, nc in adjacent_cells(r, c):
-                    adj = board[nr][nc]
-                    
-                    # CORTA-FOGO 2 (A CAUSA DAS DERROTAS): 
-                    # Se o inimigo no nível 2 estiver ao lado de um nível 3 vazio, é derrota matemática no turno dele.
-                    if adj.professor is None and adj.level == 3 and cell.level >= 2:
-                        score -= 8000.0 # Aplica pânico extremo na árvore de decisão do Minimax
-                        
-                    if adj.professor is None and adj.level <= cell.level + 1 and adj.level < 4:
-                        score -= adj.level * 20.0 # Defesa ligeiramente mais pesada que o ataque (+15)
+                opp_profs.append((r, c, cell.level))
+                # Penalidade exponencial por deixar o inimigo subir
+                if cell.level == 1: score -= 50.0
+                elif cell.level == 2: score -= 400.0
 
-    # Fator de Mobilidade
-    score += (count_legal_moves(board, team_id) - count_legal_moves(board, opp_id)) * WEIGHTS["mobility"]
-    
+    # 2. MARCAÇÃO HOMEM A HOMEM (O antídoto contra IAs Rápidas)
+    for o_r, o_c, o_lvl in opp_profs:
+        if o_lvl >= 1 and my_profs:
+            # Calcula a distância do nosso professor mais próximo até o inimigo que está subindo
+            min_dist = min(max(abs(m_r - o_r), abs(m_c - o_c)) for m_r, m_c, m_lvl in my_profs)
+            
+            if min_dist > 1:
+                # Punição brutal (-200 pts) para forçar o Minimax a andar na direção do inimigo.
+                # Quanto mais alto e mais longe o inimigo estiver, maior o desespero da QumAI em colar nele.
+                score -= (min_dist * 100.0 * o_lvl)
+
+    # 3. Visão de Futuro (Construção ao redor para subida própria)
+    for m_r, m_c, m_lvl in my_profs:
+         for nr, nc in adjacent_cells(m_r, m_c):
+            adj = board[nr][nc]
+            if adj.professor is None and adj.level <= m_lvl + 1 and adj.level < 4:
+                score += (adj.level * 10.0)
+
+    # 4. Diferencial de Mobilidade (Sufocamento de rotas)
+    score += (count_legal_moves(board, team_id) - count_legal_moves(board, opp_id)) * 2.0
+
     return score
 
 # =========================================================
