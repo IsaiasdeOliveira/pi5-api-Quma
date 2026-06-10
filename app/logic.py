@@ -1,4 +1,3 @@
-# app/logic.py
 import random
 import math
 import json
@@ -22,8 +21,8 @@ WEIGHTS = {
     "opp_height": -18.0,       
     "center_control": 15.0,    
     "mobility": 2.0,
-    "block_enemy": 35.0,       # 🔥 NOVO: Nota para bloquear ou atrapalhar o rival
-    "trap_professor": 50.0     # 🔥 NOVO: Nota para encurralar um professor inimigo
+    "block_enemy": 35.0,       # para bloquear ou atrapalhar o rival
+    "trap_professor": 50.0     # para encurralar um professor inimigo
 }
 
 def carregar_pesos():
@@ -34,7 +33,7 @@ def carregar_pesos():
             return json.load(f)
     return WEIGHTS.copy()
 
-# A variável New_WEIGHTS agora é dinâmica e carrega a inteligência salva!
+# Salva os pesos treinados para o próximo confronto
 New_WEIGHTS = carregar_pesos()
 
 # =========================================================
@@ -191,11 +190,11 @@ def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
                     if adj.professor is None and adj.level <= cell.level + 1 and adj.level < 4:
                         score -= adj.level * 15.0
                         
-                        # 🧠 ESTRATÉGIA ANTI-INIMIGO (Bloqueio com nível 4)
+                        # ESTRATÉGIA ANTI-INIMIGO (Bloqueio com nível 4)
                         if adj.level == 4:
                             score += New_WEIGHTS["block_enemy"]
 
-    # 🧠 ESTRATÉGIA DE ENCURRALAMENTO (Mobilidade Relativa)
+    # ESTRATÉGIA DE ENCURRALAMENTO (Mobilidade Relativa)
     movimentos_meus = count_legal_moves(board, team_id)
     movimentos_inimigos = count_legal_moves(board, opp_id)
     
@@ -257,7 +256,7 @@ def choose_turn(board: list[list[Cell]], team_id: int) -> Optional[PlayerTurnRes
         if move.mentor_at is None:
             return move
 
-    # 🌟 MODIFICAÇÃO DE VELOCIDADE: Move Ordering
+    # MODIFICAÇÃO DE VELOCIDADE: Move Ordering
     legal_moves.sort(key=lambda m: board[m.move_to.row][m.move_to.col].level, reverse=True)
 
     SEARCH_DEPTH = 2 

@@ -55,7 +55,6 @@ def simular_partida():
         # =======================================================
         
         # --- OPÇÃO A: RIVAL INTELIGENTE (MINIMAX ANTIGO) ---
-        # (Monotona o processamento, use no Colab!)
         logic.New_WEIGHTS = pesos_rivais_base 
         jogada_rival = choose_turn(board, team_id=2)
         if not jogada_rival: 
@@ -63,7 +62,6 @@ def simular_partida():
             return True, turnos 
             
         # --- OPÇÃO B: BOT RANDÔMICO (TESTE RÁPIDO) ---
-        # (Se o Minimax demorar demais, comente a Opção A e descomente as linhas abaixo!)
         # jogadas_rivais = get_legal_moves(board, team_id=2)
         # if not jogadas_rivais:
         #     logic.New_WEIGHTS = pesos_treinados
