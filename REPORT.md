@@ -31,14 +31,15 @@ A função de avaliação não foi criada com achismos, mas sim calibrada para c
 
 ---
 
-## 3. Metodologia de Testes e Resultados Práticos
+### Metodologia de Testes, Resultados e Upgrades Pós-Campeonato
 
-O processo de validação da QumAI foi dividido em duas fases rigorosas:
+O processo de validação e evolução da QumAI ocorreu em três fases fundamentais:
 
-1. **Testes Locais Contínuos:** Desenvolvemos scripts de simulação onde a QumAI jogava milhares de partidas contra agentes randômicos e contra versões mais antigas dela mesma. Isso serviu para confirmar que não havia erros de sintaxe e que o filtro CSP não deixaria a IA fazer jogadas ilegais.
-2. **Homologação na Arena Oficial:** Colocamos o bot para rodar no servidor de produção contra os bots desenvolvidos pelas outras equipes (como o bot líder `apatetado`). 
-
-**Resultados:** A QumAI estabilizou seu comportamento em cenários de alta pressão. Ela provou ser extremamente eficaz em defender agressivamente, alcançando estabilidade em partidas longas (com mais de 30 turnos) e garantindo uma marca formidável de vitórias no ambiente do campeonato, validando totalmente os pesos matemáticos escolhidos.
+1. **Testes Locais e Validação Lógica:** Inicialmente, a IA foi testada localmente contra agentes randômicos e contra versões anteriores de si mesma (o bot QumAI desatualizado). O objetivo foi garantir que os nossos 3 pilares lógicos (Filtro CSP, Minimax e Heurísticas Lineares) funcionavam em perfeita harmonia, sem realizar jogadas ilegais ou estourar o limite de tempo.
+  
+2. **Homologação na Arena Oficial (Campeonato):** Colocamos o bot em produção contra os concorrentes desenvolvidos pelas outras equipes na arena do professor. A QumAI provou ser altamente eficaz na defesa e estabilizou os confrontos em cenários de alta pressão, validando a nossa lógica estrutural e conquistando dezenas de vitórias consistentes.
+   
+3. **Análise e Upgrade Final Pós-Campeonato:** O desenvolvimento não parou no fim do torneio. Após observarmos o comportamento da IA durante as rodadas oficiais, realizamos uma análise profunda dos logs de partida. Identificamos padrões onde o bot perdia eficiência tática e fizemos um *upgrade* direto na nossa lógica base: calibramos os pesos matemáticos finais (aumentando a punição de interceptação e refinando o domínio central) para criar a versão definitiva, polida e de alta performance que se encontra apresentada neste repositório.
 
 ---
 
