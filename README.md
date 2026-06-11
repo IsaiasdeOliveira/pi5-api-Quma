@@ -62,5 +62,5 @@ Como a árvore do Minimax atinge o limite temporal em nós-folha (tabuleiros ina
   
 ## Documentação Completa e Relatório
 
-Para uma análise aprofundada dos resultados práticos desses algoritmos, da nossa metodologia de testes na arena oficial e de como alcançamos a marca de estabilidade contra os bots líderes do campeonato, consulte o arquivo REPORT.md na raiz deste repositório.
+Para uma análise aprofundada dos resultados práticos desses algoritmos, da nossa metodologia de testes na arena oficial e de como alcançamos a marca de estabilidade contra os bots líderes do campeonato, consulte o arquivo **[REPORT.md](./REPORT.md)** na raiz deste repositório.
 
