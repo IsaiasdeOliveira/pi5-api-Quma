@@ -199,22 +199,28 @@ def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
             if adj.professor is None and adj.level <= m_lvl + 1 and adj.level < 4:
                 score += (adj.level * 10.0)
 
-    # 4. DETECTOR DE CLAUSTROFOBIA / ANTI-SUFOCAMENTO (Contra Supla, Carille e ComFome)
+   # 4. DETECTOR DE CLAUSTROFOBIA INTELIGENTE (Contra encurralamento real)
     for m_r, m_c, m_lvl in my_profs:
-        rotas_fuga = 0
+        vizinhos_totais = len(adjacent_cells(m_r, m_c))
+        obstaculos_reais = 0
+        
         for nr, nc in adjacent_cells(m_r, m_c):
             adj_cell = board[nr][nc]
-            if adj_cell.level < 4 and adj_cell.professor is None:
-                rotas_fuga += 1
+            # Só conta como bloqueio se for uma parede nível 4 ou um professor (seu ou do rival)
+            if adj_cell.level == 4 or adj_cell.professor is not None:
+                obstaculos_reais += 1
         
-        # Penalidade violenta se o inimigo reduzir nossas saídas para 1 ou nenhuma
-        if rotas_fuga <= 1:
-            score -= 4500.0
+        # Só entra em pânico se o número de saídas REAIS sumir devido a bloqueios externos
+        saidas_restantes = vizinhos_totais - obstaculos_reais
+        if saidas_restantes <= 1:
+            score -= 600.0  # Reduzido de 4500 para 600 (Evita a armadilha, mas não amarela no ataque)
 
-    # 5. Diferencial de Mobilidade Otimizado (Sem dar varredura extra no grid)
+    # 5. Diferencial de Mobilidade Moderado
     meus_movimentos = _calcular_mobilidade_posicional(board, my_profs)
     movimentos_adversarios = _calcular_mobilidade_posicional(board, opp_profs)
-    score += (meus_movimentos - movimentos_adversarios) * New_WEIGHTS["mobility"]
+    
+    # Reduzido o peso de 15.0 para 5.0 para que a IA priorize SUBIR em vez de apenas caminhar
+    score += (meus_movimentos - movimentos_adversarios) * 5.0
 
     return score
 
