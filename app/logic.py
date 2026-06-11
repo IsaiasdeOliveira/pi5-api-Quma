@@ -179,8 +179,8 @@ def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
             elif cell.professor in TEAM_PROFESSORS[opp_id]:
                 opp_profs.append((r, c, cell.level))
                 # Defesa respeitosa, mas equivalente ao ataque para evitar iscas falsas
-                if cell.level == 1: score -= 50.0
-                elif cell.level == 2: score -= 350.0  
+                if cell.level == 1: score -= 80.0
+                elif cell.level == 2: score -= 800.0  
 
     # 2. MARCAÇÃO HOMEM A HOMEM (Antídoto contra Encastelamento de Canto)
     for o_r, o_c, o_lvl in opp_profs:
