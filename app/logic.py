@@ -8,7 +8,7 @@ from app.schemas import Cell, Position, SetupResponse, PlayerTurnResponse
 
 BOARD_SIZE = 5
 
-# Professores de cada time
+# Professors de cada time
 TEAM_PROFESSORS = {
     1: ["CLARO", "REY"],       # Turing
     2: ["KARIN", "BEATRIZ"],   # Lovelace
@@ -18,9 +18,9 @@ TEAM_PROFESSORS = {
 WEIGHTS = {
     "win_move": 10000.0,
     "my_height": 35.0,         
-    "opp_height": -35.0,       # Respeito absoluto ao avanço inimigo
+    "opp_height": -35.0,       
     "center_control": 15.0,    
-    "mobility": 15.0           # Aumentado para valorizar o controle de espaço livre
+    "mobility": 5.0            # Balanceado para priorizar subida em vez de apenas correr
 }
 
 def carregar_pesos():
@@ -109,7 +109,7 @@ def get_legal_moves(board: list[list[Cell]], team_id: int) -> list[PlayerTurnRes
     return legal_moves
 
 def _calcular_mobilidade_posicional(board: list[list[Cell]], posicoes: list[tuple[int, int, int]]) -> int:
-    """Otimização Extrema: Conta movimentos legais direto das posições em cache, sem escanear o tabuleiro."""
+    """Otimização Extrema: Conta movimentos legais direto das posições em cache."""
     count = 0
     for cur_row, cur_col, cur_level in posicoes:
         for dst_row, dst_col in adjacent_cells(cur_row, cur_col):
@@ -148,14 +148,14 @@ def apply_move(board: list[list[Cell]], move: PlayerTurnResponse) -> list[list[C
     return new_board
 
 # =========================================================
-# MÓDULO 2: AVALIAÇÃO DE ESTADO (Tática Anti-Sufocamento e Anti-Camping)
+# MÓDULO 2: AVALIAÇÃO DE ESTADO (Mente Equilibrada e Dominante)
 # =========================================================
 def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
     score = 0.0
     my_profs = []
     opp_profs = []
 
-    # 1. Coleta posições e avalia a altura base das peças (Varredura Única)
+    # 1. Coleta posições e avalia a altura/centro (Equilíbrio Antídoto contra o Pensador)
     for r in range(BOARD_SIZE):
         for c in range(BOARD_SIZE):
             cell = board[r][c]
@@ -168,64 +168,63 @@ def evaluate_board(board: list[list[Cell]], team_id: int, opp_id: int) -> float:
 
             if cell.professor in TEAM_PROFESSORS[team_id]:
                 my_profs.append((r, c, cell.level))
-                if cell.level == 1: score += 40.0
-                elif cell.level == 2: score += 150.0
+                # Prêmios de subida elevados para focar no próprio ataque
+                if cell.level == 1: score += 50.0
+                elif cell.level == 2: score += 350.0  
                 
-                # Controle de centro
+                # Controle de centro agressivo: ocupa o meio antes do Pensador armar torres
                 center_dist = abs(r - 2) + abs(c - 2)
-                score += (4 - center_dist) * 5.0
+                score += (4 - center_dist) * 12.0
 
             elif cell.professor in TEAM_PROFESSORS[opp_id]:
                 opp_profs.append((r, c, cell.level))
+                # Defesa respeitosa, mas equivalente ao ataque para evitar iscas falsas
                 if cell.level == 1: score -= 50.0
-                elif cell.level == 2: score -= 400.0
+                elif cell.level == 2: score -= 350.0  
 
-    # 2. MARCAÇÃO HOMEM A HOMEM (Antídoto contra Encastelamento do Boboca_v2)
+    # 2. MARCAÇÃO HOMEM A HOMEM (Antídoto contra Encastelamento de Canto)
     for o_r, o_c, o_lvl in opp_profs:
         if o_lvl >= 1 and my_profs:
             min_dist = min(max(abs(m_r - o_r), abs(m_c - o_c)) for m_r, m_c, m_lvl in my_profs)
             
             if min_dist > 1:
-                # Se o inimigo tentar erguer torres nos cantos/bordas, caçamos agressivamente
+                # Persegue agressivamente se tentarem subir escondidos nas bordas extremas
                 if o_r in [0, 4] or o_c in [0, 4]:
                     score -= (min_dist * 350.0 * o_lvl)
                 else:
                     score -= (min_dist * 100.0 * o_lvl)
 
-    # 3. Visão de Futuro (Posicionamento ao redor para subida própria)
+    # 3. Visão de Futuro (Construção ao redor para subida própria)
     for m_r, m_c, m_lvl in my_profs:
          for nr, nc in adjacent_cells(m_r, m_c):
             adj = board[nr][nc]
             if adj.professor is None and adj.level <= m_lvl + 1 and adj.level < 4:
                 score += (adj.level * 10.0)
 
-   # 4. DETECTOR DE CLAUSTROFOBIA INTELIGENTE (Contra encurralamento real)
+    # 4. DETECTOR DE CLAUSTROFOBIA RECALIBRADO (Não amarela nas bordas, mas evita barreiras)
     for m_r, m_c, m_lvl in my_profs:
         vizinhos_totais = len(adjacent_cells(m_r, m_c))
         obstaculos_reais = 0
         
         for nr, nc in adjacent_cells(m_r, m_c):
             adj_cell = board[nr][nc]
-            # Só conta como bloqueio se for uma parede nível 4 ou um professor (seu ou do rival)
+            # Bloqueio verdadeiro é apenas parede nível 4 ou outro professor
             if adj_cell.level == 4 or adj_cell.professor is not None:
                 obstaculos_reais += 1
         
-        # Só entra em pânico se o número de saídas REAIS sumir devido a bloqueios externos
         saidas_restantes = vizinhos_totais - obstaculos_reais
         if saidas_restantes <= 1:
-            score -= 600.0  # Reduzido de 4500 para 600 (Evita a armadilha, mas não amarela no ataque)
+            score -= 600.0  # Pune o sufocamento real, mantendo a coragem para atacar nas pontas
 
-    # 5. Diferencial de Mobilidade Moderado
+    # 5. Diferencial de Mobilidade Otimizado
     meus_movimentos = _calcular_mobilidade_posicional(board, my_profs)
     movimentos_adversarios = _calcular_mobilidade_posicional(board, opp_profs)
-    
-    # Reduzido o peso de 15.0 para 5.0 para que a IA priorize SUBIR em vez de apenas caminhar
     score += (meus_movimentos - movimentos_adversarios) * 5.0
 
     return score
 
 # =========================================================
-# MÓDULO 3: MOTOR MINIMAX (Com Pressão de Tempo)
+# MÓDULO 3: MOTOR MINIMAX (Profundidade Avançada 3)
 # =========================================================
 def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float, is_maximizing: bool, team_id: int, opp_id: int) -> float:
     """Busca em profundidade com Alpha-Beta Pruning."""
@@ -266,7 +265,7 @@ def minimax(board: list[list[Cell]], depth: int, alpha: float, beta: float, is_m
         return min_eval
 
 def choose_turn(board: list[list[Cell]], team_id: int) -> Optional[PlayerTurnResponse]:
-    """Decide a melhor jogada usando CSP e Minimax de Profundidade 3 Otimizado."""
+    """Decide a melhor jogada usando CSP e Minimax + Alpha-Beta."""
     opp_id = 2 if team_id == 1 else 1
     legal_moves = get_legal_moves(board, team_id)
     if not legal_moves:
@@ -276,10 +275,10 @@ def choose_turn(board: list[list[Cell]], team_id: int) -> Optional[PlayerTurnRes
         if move.mentor_at is None:
             return move
 
-    # Ordenação de jogadas para maximizar a velocidade da Poda Alpha-Beta
+    # Ordenação rápida para otimizar os cortes da poda
     legal_moves.sort(key=lambda m: board[m.move_to.row][m.move_to.col].level, reverse=True)
 
-    # 🚀 PROFUNDIDADE ATUALIZADA PARA 3: Graças à otimização da mobilidade, a IA enxerga muito mais longe
+    # Mantido em 3: Enxerga longe o bastante para desarmar armadilhas sem estourar o tempo
     SEARCH_DEPTH = 3 
     best_move = None
     best_score = -math.inf
